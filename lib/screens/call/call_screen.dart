@@ -46,7 +46,8 @@ class _CallScreenState extends State<CallScreen> {
   bool _isSpeakerOn = true;
   bool _isCallConnected = false;
   bool _isRecording = false;
-  bool _isSpeechToTextEnabled = true;
+  bool _isSpeechToTextEnabled = false; // Changed to false by default
+  bool _recordingEnabled = false; // NEW: Recording toggle
 
   String _transcript = '';
   String _callDuration = '00:00';
@@ -75,15 +76,19 @@ class _CallScreenState extends State<CallScreen> {
 
   Future<void> _initializeCall() async {
     try {
-      // Initialize Agora
       await _agoraService.initialize();
 
-      // Setup callbacks
       _agoraService.onUserJoined = (uid, elapsed) {
         setState(() => _isCallConnected = true);
         _startCallTimer();
-        _startRecording();
-        _startSpeechToText();
+        // Recording only starts if enabled
+        if (_recordingEnabled) {
+          _startRecording();
+        }
+        // Speech-to-text only starts if enabled
+        if (_isSpeechToTextEnabled) {
+          _startSpeechToText();
+        }
       };
 
       _agoraService.onUserOffline = (uid, reason) {
@@ -95,15 +100,12 @@ class _CallScreenState extends State<CallScreen> {
       String callId;
 
       if (widget.isIncoming) {
-        // For incoming calls, use provided channel name
         channelName = widget.channelName!;
         callId = widget.callId!;
         _callLogId = callId;
       } else {
-        // For outgoing calls, generate channel name and initiate call
         channelName = _generateChannelName(currentUserId, widget.contactUserId);
 
-        // Create call state in Firestore
         final call = await _callService.initiateCall(
           callerId: currentUserId,
           callerName: _authService.currentUser?.displayName ?? 'Unknown',
@@ -115,11 +117,9 @@ class _CallScreenState extends State<CallScreen> {
         callId = call.id;
         _callLogId = callId;
 
-        // Listen for call acceptance/rejection
         _callStatusSubscription =
             _callService.listenToCallStatus(callId).listen((callState) {
           if (callState == null) {
-            // Call was ended
             if (mounted && !_isCallConnected) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Call ended')),
@@ -127,7 +127,6 @@ class _CallScreenState extends State<CallScreen> {
               Navigator.pop(context);
             }
           } else if (callState.status == CallStatus.rejected) {
-            // Call was rejected
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Call rejected')),
@@ -137,7 +136,6 @@ class _CallScreenState extends State<CallScreen> {
           }
         });
 
-        // Auto-end if not answered in 30 seconds
         Future.delayed(const Duration(seconds: 30), () {
           if (!_isCallConnected && mounted) {
             _callService.markAsMissed(callId);
@@ -149,11 +147,10 @@ class _CallScreenState extends State<CallScreen> {
         });
       }
 
-      // Join Agora channel
       await _agoraService.joinChannel(
         channelName: channelName,
-        token: '', // Use Agora token for production
-        uid: 0, // Agora will assign UID automatically
+        token: '',
+        uid: 0,
       );
     } catch (e) {
       if (mounted) {
@@ -166,7 +163,6 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   String _generateChannelName(String uid1, String uid2) {
-    // Sort UIDs to ensure same channel name regardless of who calls whom
     final sorted = [uid1, uid2]..sort();
     return '${sorted[0]}_${sorted[1]}';
   }
@@ -192,9 +188,33 @@ class _CallScreenState extends State<CallScreen> {
 
       if (_recordingPath != null) {
         setState(() => _isRecording = true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Recording started'),
+            duration: Duration(seconds: 2),
+          ),
+        );
       }
     } catch (e) {
       print('Error starting recording: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Recording failed: $e')),
+      );
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    try {
+      await _recordingService.stopRecording();
+      setState(() => _isRecording = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Recording stopped'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      print('Error stopping recording: $e');
     }
   }
 
@@ -206,9 +226,16 @@ class _CallScreenState extends State<CallScreen> {
         });
       };
 
+      _speechService.onError = (error) {
+        print('Speech error: $error');
+      };
+
       await _speechService.startListening();
     } catch (e) {
       print('Error starting speech-to-text: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Speech-to-text failed: $e')),
+      );
     }
   }
 
@@ -222,41 +249,48 @@ class _CallScreenState extends State<CallScreen> {
     await _agoraService.setSpeakerphone(_isSpeakerOn);
   }
 
-  void _toggleSpeechToText() {
+  void _toggleRecording() async {
+    if (_isRecording) {
+      await _stopRecording();
+      setState(() => _recordingEnabled = false);
+    } else {
+      if (_isCallConnected) {
+        await _startRecording();
+      }
+      setState(() => _recordingEnabled = true);
+    }
+  }
+
+  void _toggleSpeechToText() async {
     setState(() => _isSpeechToTextEnabled = !_isSpeechToTextEnabled);
 
     if (_isSpeechToTextEnabled) {
-      _startSpeechToText();
+      if (_isCallConnected) {
+        await _startSpeechToText();
+      }
     } else {
-      _speechService.stopListening();
+      await _speechService.stopListening();
+      setState(() => _transcript = '');
     }
   }
 
   Future<void> _endCall() async {
     try {
-      // Stop call timer
       _callTimer?.cancel();
 
-      // Stop recording
       if (_isRecording) {
         await _recordingService.stopRecording();
       }
 
-      // Stop speech-to-text
       await _speechService.stopListening();
-
-      // Leave Agora channel
       await _agoraService.leaveChannel();
 
-      // End call in Firestore
       if (_callLogId != null) {
         await _callService.endCall(_callLogId!);
       }
 
-      // Save call log
       await _saveCallLog();
 
-      // Save recording metadata
       if (_recordingPath != null && _callLogId != null) {
         final currentUserId = _authService.currentUser?.uid;
         if (currentUserId != null) {
@@ -304,7 +338,6 @@ class _CallScreenState extends State<CallScreen> {
         transcript: _transcript.isEmpty ? null : _transcript,
       );
 
-      // Save to current user's call logs
       await _firestore
           .collection(AppConstants.usersCollection)
           .doc(currentUser.uid)
@@ -312,13 +345,11 @@ class _CallScreenState extends State<CallScreen> {
           .doc(_callLogId)
           .set(callLog.toMap());
 
-      // Also save to other user's call logs
       final otherCallLog = callLog.copyWith(
         callType: widget.isIncoming ? CallType.outgoing : CallType.incoming,
       );
 
-      final otherUserId =
-          widget.isIncoming ? widget.contactUserId : widget.contactUserId;
+      final otherUserId = widget.contactUserId;
       await _firestore
           .collection(AppConstants.usersCollection)
           .doc(otherUserId)
@@ -333,10 +364,7 @@ class _CallScreenState extends State<CallScreen> {
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
-      onWillPop: () async {
-        // Prevent back button, must use end call button
-        return false;
-      },
+      onWillPop: () async => false,
       child: Scaffold(
         backgroundColor: AppColors.primaryColor,
         body: SafeArea(
@@ -346,7 +374,6 @@ class _CallScreenState extends State<CallScreen> {
               children: [
                 const Spacer(),
 
-                // Contact Avatar
                 CircleAvatar(
                   radius: 60,
                   backgroundColor: Colors.white.withOpacity(0.2),
@@ -361,7 +388,6 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Contact Name
                 Text(
                   widget.contactName,
                   style: const TextStyle(
@@ -372,7 +398,6 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(height: 8),
 
-                // Call Status
                 Text(
                   _isCallConnected ? _callDuration : 'Calling...',
                   style: TextStyle(
@@ -404,11 +429,10 @@ class _CallScreenState extends State<CallScreen> {
 
                 const Spacer(),
 
-                // Call Controls
+                // Call Controls Row 1
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
-                    // Mute Button
                     _buildCallButton(
                       icon: _isMuted ? Icons.mic_off : Icons.mic,
                       label: _isMuted ? 'Unmute' : 'Mute',
@@ -417,8 +441,6 @@ class _CallScreenState extends State<CallScreen> {
                           ? Colors.white.withOpacity(0.3)
                           : Colors.white.withOpacity(0.2),
                     ),
-
-                    // Speaker Button
                     _buildCallButton(
                       icon: _isSpeakerOn ? Icons.volume_up : Icons.volume_off,
                       label: 'Speaker',
@@ -427,8 +449,24 @@ class _CallScreenState extends State<CallScreen> {
                           ? Colors.white.withOpacity(0.3)
                           : Colors.white.withOpacity(0.2),
                     ),
+                    _buildCallButton(
+                      icon: _recordingEnabled
+                          ? Icons.fiber_manual_record
+                          : Icons.radio_button_unchecked,
+                      label: 'Record',
+                      onPressed: _toggleRecording,
+                      backgroundColor: _recordingEnabled
+                          ? Colors.red.withOpacity(0.3)
+                          : Colors.white.withOpacity(0.2),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
 
-                    // Speech-to-Text Button
+                // Call Controls Row 2
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
                     _buildCallButton(
                       icon: _isSpeechToTextEnabled
                           ? Icons.subtitles
@@ -478,7 +516,6 @@ class _CallScreenState extends State<CallScreen> {
                   ),
                 const SizedBox(height: 32),
 
-                // End Call Button
                 FloatingActionButton(
                   onPressed: _endCall,
                   backgroundColor: AppColors.dangerColor,
