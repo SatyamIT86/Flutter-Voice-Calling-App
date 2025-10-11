@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "335480039067",
+    "project_id": "flutter-voice-call-app",
+    "storage_bucket": "flutter-voice-call-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:335480039067:android:667171b0462d6be713883e",
+        "android_client_info": {
+          "package_name": "com.example.flutter_voicecall_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCxO0_cd5g5eVfb_F37fLxw9Gqr_BPmtsY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
