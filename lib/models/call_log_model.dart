@@ -1,5 +1,3 @@
-// lib/models/call_log_model.dart
-
 enum CallType { incoming, outgoing, missed }
 
 class CallLogModel {

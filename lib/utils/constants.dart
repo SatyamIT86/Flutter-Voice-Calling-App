@@ -2,8 +2,7 @@ import 'package:flutter/material.dart';
 
 class AppConstants {
   // Agora Configuration
-  static const String agoraAppId =
-      'df97ce1499c74595b159706922586e50'; // Replace with your Agora App ID
+  static const String agoraAppId = 'df97ce1499c74595b159706922586e50';
 
   // Collections
   static const String usersCollection = 'users';
