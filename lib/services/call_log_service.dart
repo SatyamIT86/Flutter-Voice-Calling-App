@@ -8,29 +8,37 @@ import '../utils/constants.dart';
 class CallLogService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
-  // Get Hive box
   Box<CallLogModel> get _callLogsBox =>
       Hive.box<CallLogModel>(AppConstants.callLogsBox);
 
-  // SAVE TO BOTH LOCAL AND CLOUD
+  // SAVE - Always add, never replace
   Future<void> saveCallLog(CallLogModel callLog, String userId) async {
     try {
       print('💾 Saving call log: ${callLog.id}');
       print('   Duration: ${callLog.duration} seconds');
       print('   Type: ${callLog.callType}');
+      print('   User ID: $userId');
 
-      // Save to LOCAL Hive FIRST (always works)
+      // Check if already exists locally
+      final existingLocal = _callLogsBox.get(callLog.id);
+      if (existingLocal != null) {
+        print('⚠️ Call log already exists locally, skipping: ${callLog.id}');
+        return;
+      }
+
+      // Save to LOCAL Hive FIRST
       await _callLogsBox.put(callLog.id, callLog);
-      print('✅ Saved to local Hive');
+      print('✅ Saved to local Hive with ID: ${callLog.id}');
+      print('   Total local call logs: ${_callLogsBox.length}');
 
-      // Save to Firestore (might fail if offline)
+      // Save to Firestore
       try {
         await _firestore
             .collection(AppConstants.usersCollection)
             .doc(userId)
             .collection(AppConstants.callLogsCollection)
             .doc(callLog.id)
-            .set(callLog.toMap(), SetOptions(merge: true));
+            .set(callLog.toMap());
         print('✅ Saved to Firestore');
       } catch (e) {
         print('⚠️ Firestore save failed (but local saved): $e');
@@ -41,19 +49,19 @@ class CallLogService {
     }
   }
 
-  // GET FROM LOCAL HIVE (always available)
+  // GET - Always return local data (never delete)
   Future<List<CallLogModel>> getCallLogs(String userId) async {
     try {
       print('📂 Getting call logs from local storage');
 
-      // Get from local Hive
+      // Get ALL from local Hive
       List<CallLogModel> localCallLogs = _callLogsBox.values.toList();
       print('   Found ${localCallLogs.length} local call logs');
 
-      // Sort by date
+      // Sort by date (newest first)
       localCallLogs.sort((a, b) => b.timestamp.compareTo(a.timestamp));
 
-      // Try to sync from Firestore in background (don't wait)
+      // Background sync (don't wait, don't delete)
       _syncCallLogsFromCloud(userId);
 
       return localCallLogs;
@@ -63,39 +71,48 @@ class CallLogService {
     }
   }
 
-  // Background sync from Firestore
+  // Background sync - ONLY ADD new ones, NEVER delete
   Future<void> _syncCallLogsFromCloud(String userId) async {
     try {
+      print('🔄 Background sync starting...');
+
       QuerySnapshot snapshot = await _firestore
           .collection(AppConstants.usersCollection)
           .doc(userId)
           .collection(AppConstants.callLogsCollection)
           .get();
 
+      print('   Found ${snapshot.docs.length} call logs in Firestore');
+
       for (var doc in snapshot.docs) {
         try {
           CallLogModel callLog =
               CallLogModel.fromMap(doc.data() as Map<String, dynamic>);
 
-          // Only save if not already in local
+          // Only ADD if not already in local
           if (_callLogsBox.get(callLog.id) == null) {
             await _callLogsBox.put(callLog.id, callLog);
-            print('📥 Synced call log: ${callLog.id}');
+            print('📥 Synced new call log: ${callLog.id}');
           }
         } catch (e) {
-          print('⚠️ Error syncing call log: $e');
+          print('⚠️ Error syncing individual call log: $e');
         }
       }
+
+      print('✅ Sync complete. Total local: ${_callLogsBox.length}');
     } catch (e) {
       print('⚠️ Cloud sync failed: $e');
     }
   }
 
-  // DELETE FROM BOTH
+  // DELETE - only when user manually deletes
   Future<void> deleteCallLog(String callLogId, String userId) async {
     try {
+      print('🗑️ Deleting call log: $callLogId');
+
       // Delete from Hive
       await _callLogsBox.delete(callLogId);
+      print('✅ Deleted from Hive');
 
       // Delete from Firestore
       try {
@@ -105,11 +122,23 @@ class CallLogService {
             .collection(AppConstants.callLogsCollection)
             .doc(callLogId)
             .delete();
+        print('✅ Deleted from Firestore');
       } catch (e) {
         print('⚠️ Firestore delete failed: $e');
       }
     } catch (e) {
       throw 'Error deleting call log: $e';
     }
+  }
+
+  // Get count for debugging
+  int getCallLogsCount() {
+    return _callLogsBox.length;
+  }
+
+  // Clear all (for testing only)
+  Future<void> clearAllCallLogs() async {
+    await _callLogsBox.clear();
+    print('🗑️ All call logs cleared');
   }
 }

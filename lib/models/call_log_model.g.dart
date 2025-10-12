@@ -1,6 +1,10 @@
-// GENERATED CODE
+// GENERATED CODE - DO NOT MODIFY BY HAND
 
 part of 'call_log_model.dart';
+
+// **************************************************************************
+// TypeAdapterGenerator
+// **************************************************************************
 
 class CallLogModelAdapter extends TypeAdapter<CallLogModel> {
   @override
@@ -12,13 +16,31 @@ class CallLogModelAdapter extends TypeAdapter<CallLogModel> {
     final fields = <int, dynamic>{
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
+
+    // Convert stored string to enum safely
+    CallType callTypeEnum;
+    final storedCallType = (fields[5] as String?)?.toLowerCase() ?? 'outgoing';
+    switch (storedCallType) {
+      case 'incoming':
+        callTypeEnum = CallType.incoming;
+        break;
+      case 'outgoing':
+        callTypeEnum = CallType.outgoing;
+        break;
+      case 'missed':
+        callTypeEnum = CallType.missed;
+        break;
+      default:
+        callTypeEnum = CallType.outgoing;
+    }
+
     return CallLogModel(
       id: fields[0] as String,
       callerId: fields[1] as String,
       callerName: fields[2] as String,
       receiverId: fields[3] as String,
       receiverName: fields[4] as String,
-      callType: fields[5] as CallType,
+      callTypeEnum: callTypeEnum,
       timestamp: fields[6] as DateTime,
       duration: fields[7] as int,
       recordingUrl: fields[8] as String?,
@@ -41,7 +63,7 @@ class CallLogModelAdapter extends TypeAdapter<CallLogModel> {
       ..writeByte(4)
       ..write(obj.receiverName)
       ..writeByte(5)
-      ..write(obj.callType)
+      ..write(obj.callType) // store as string
       ..writeByte(6)
       ..write(obj.timestamp)
       ..writeByte(7)

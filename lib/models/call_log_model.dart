@@ -6,7 +6,7 @@ part 'call_log_model.g.dart';
 
 enum CallType { incoming, outgoing, missed }
 
-@HiveType(typeId: 1) // ADD HIVE ANNOTATION
+@HiveType(typeId: 1)
 class CallLogModel extends HiveObject {
   @HiveField(0)
   final String id;
@@ -24,7 +24,7 @@ class CallLogModel extends HiveObject {
   final String receiverName;
 
   @HiveField(5)
-  final String callType; // Store as string
+  final String callType;
 
   @HiveField(6)
   final DateTime timestamp;
@@ -44,19 +44,24 @@ class CallLogModel extends HiveObject {
     required this.callerName,
     required this.receiverId,
     required this.receiverName,
-    required CallType callType,
+    required CallType callTypeEnum,
     required this.timestamp,
     required this.duration,
     this.recordingUrl,
     this.transcript,
-  }) : callType = callType.toString().split('.').last;
+  }) : callType = callTypeEnum.name;
 
-  // Get CallType enum from string
   CallType get callTypeEnum {
-    return CallType.values.firstWhere(
-      (e) => e.toString().split('.').last == callType,
-      orElse: () => CallType.outgoing,
-    );
+    switch (callType.toLowerCase()) {
+      case 'incoming':
+        return CallType.incoming;
+      case 'outgoing':
+        return CallType.outgoing;
+      case 'missed':
+        return CallType.missed;
+      default:
+        return CallType.outgoing;
+    }
   }
 
   Map<String, dynamic> toMap() {
@@ -75,16 +80,34 @@ class CallLogModel extends HiveObject {
   }
 
   factory CallLogModel.fromMap(Map<String, dynamic> map) {
+    CallType type;
+    try {
+      final callTypeStr =
+          (map['callType'] ?? 'outgoing').toString().toLowerCase();
+      switch (callTypeStr) {
+        case 'incoming':
+          type = CallType.incoming;
+          break;
+        case 'outgoing':
+          type = CallType.outgoing;
+          break;
+        case 'missed':
+          type = CallType.missed;
+          break;
+        default:
+          type = CallType.outgoing;
+      }
+    } catch (e) {
+      type = CallType.outgoing;
+    }
+
     return CallLogModel(
       id: map['id'] ?? '',
       callerId: map['callerId'] ?? '',
       callerName: map['callerName'] ?? '',
       receiverId: map['receiverId'] ?? '',
       receiverName: map['receiverName'] ?? '',
-      callType: CallType.values.firstWhere(
-        (e) => e.toString().split('.').last == map['callType'],
-        orElse: () => CallType.outgoing,
-      ),
+      callTypeEnum: type,
       timestamp:
           DateTime.parse(map['timestamp'] ?? DateTime.now().toIso8601String()),
       duration: map['duration'] ?? 0,
@@ -105,7 +128,7 @@ class CallLogModel extends HiveObject {
     String? callerName,
     String? receiverId,
     String? receiverName,
-    CallType? callType,
+    CallType? callTypeEnum,
     DateTime? timestamp,
     int? duration,
     String? recordingUrl,
@@ -117,7 +140,7 @@ class CallLogModel extends HiveObject {
       callerName: callerName ?? this.callerName,
       receiverId: receiverId ?? this.receiverId,
       receiverName: receiverName ?? this.receiverName,
-      callType: callType ?? this.callTypeEnum,
+      callTypeEnum: callTypeEnum ?? this.callTypeEnum,
       timestamp: timestamp ?? this.timestamp,
       duration: duration ?? this.duration,
       recordingUrl: recordingUrl ?? this.recordingUrl,

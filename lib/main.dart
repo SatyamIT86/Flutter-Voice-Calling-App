@@ -20,11 +20,13 @@ void main() async {
   await Hive.initFlutter();
 
   Hive.registerAdapter(ContactModelAdapter());
-  Hive.registerAdapter(CallLogModelAdapter()); // ADD THIS
+  Hive.registerAdapter(CallLogModelAdapter());
   Hive.registerAdapter(RecordingModelAdapter());
+
   await clearAllHiveData();
+
   await Hive.openBox<ContactModel>(AppConstants.contactsBox);
-  await Hive.openBox<CallLogModel>(AppConstants.callLogsBox); // ADD THIS
+  await Hive.openBox<CallLogModel>(AppConstants.callLogsBox);
   await Hive.openBox<RecordingModel>(AppConstants.recordingsBox);
   await Hive.openBox(AppConstants.settingsBox);
 

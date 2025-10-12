@@ -19,7 +19,6 @@ class RecordingService {
   String? _currentRecordingPath;
   DateTime? _recordingStartTime;
 
-  // Get Hive box
   Box<RecordingModel> get _recordingsBox =>
       Hive.box<RecordingModel>(AppConstants.recordingsBox);
 
@@ -54,7 +53,7 @@ class RecordingService {
 
       if (_isRecording) {
         print('⚠️ Already recording');
-        return null;
+        return _currentRecordingPath;
       }
 
       Directory appDir = await getApplicationDocumentsDirectory();
@@ -108,10 +107,22 @@ class RecordingService {
       final finalPath = path ?? _currentRecordingPath;
       print('✅ Recording stopped: $finalPath');
 
+      // Verify file exists
+      if (finalPath != null) {
+        final file = File(finalPath);
+        if (await file.exists()) {
+          final size = await file.length();
+          print('   File size: $size bytes');
+        } else {
+          print('⚠️ File does not exist after stopping!');
+        }
+      }
+
       return finalPath;
     } catch (e) {
       print('❌ Error stopping recording: $e');
-      return null;
+      _isRecording = false;
+      return _currentRecordingPath;
     }
   }
 
@@ -132,7 +143,7 @@ class RecordingService {
     return DateTime.now().difference(_recordingStartTime!).inSeconds;
   }
 
-  // SAVE TO BOTH LOCAL AND CLOUD
+  // SAVE - Always add, never replace
   Future<RecordingModel> saveRecordingMetadata({
     required String userId,
     required String callLogId,
@@ -145,19 +156,26 @@ class RecordingService {
       print('💾 saveRecordingMetadata called');
       print('   Path: $localPath');
       print('   Duration: $duration');
+      print('   Contact: $contactName');
 
-      // Check if file exists
+      // Verify file exists
       File file = File(localPath);
       if (!await file.exists()) {
         print('❌ File does not exist: $localPath');
-        throw 'Recording file not found';
+        throw 'Recording file not found at: $localPath';
       }
 
       int fileSize = await file.length();
       print('   File size: $fileSize bytes');
 
+      if (fileSize == 0) {
+        print('⚠️ Warning: File size is 0 bytes!');
+      }
+
+      final recordingId = _uuid.v4();
+
       RecordingModel recording = RecordingModel(
-        id: _uuid.v4(),
+        id: recordingId,
         callLogId: callLogId,
         localPath: localPath,
         contactName: contactName,
@@ -169,9 +187,25 @@ class RecordingService {
 
       print('   Recording ID: ${recording.id}');
 
+      // Check if already exists
+      final existingLocal = _recordingsBox.get(recording.id);
+      if (existingLocal != null) {
+        print('⚠️ Recording already exists locally: ${recording.id}');
+        return existingLocal;
+      }
+
       // Save to LOCAL Hive FIRST
       await _recordingsBox.put(recording.id, recording);
-      print('✅ Saved to local Hive');
+      print('✅ Saved to local Hive with ID: ${recording.id}');
+      print('   Total local recordings: ${_recordingsBox.length}');
+
+      // Verify it was saved
+      final savedRecording = _recordingsBox.get(recording.id);
+      if (savedRecording != null) {
+        print('✅ Verified: Recording is in Hive');
+      } else {
+        print('❌ ERROR: Recording not found in Hive after saving!');
+      }
 
       // Save to Firestore
       try {
@@ -193,57 +227,76 @@ class RecordingService {
     }
   }
 
-  // GET FROM LOCAL HIVE (always available)
+  // GET - Always return local data
   Future<List<RecordingModel>> getRecordings(String userId) async {
     try {
       print('📂 Getting recordings from local storage');
 
-      // Get from local Hive
+      // Get ALL from local Hive
       List<RecordingModel> localRecordings = _recordingsBox.values.toList();
       print('   Found ${localRecordings.length} local recordings');
 
-      // Sort by date
-      localRecordings.sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+      // Verify files still exist
+      List<RecordingModel> validRecordings = [];
+      for (var recording in localRecordings) {
+        final file = File(recording.localPath);
+        if (await file.exists()) {
+          validRecordings.add(recording);
+        } else {
+          print('⚠️ File missing for recording: ${recording.id}');
+        }
+      }
 
-      // Try to sync from Firestore in background (don't wait)
+      print('   ${validRecordings.length} recordings have valid files');
+
+      // Sort by date (newest first)
+      validRecordings.sort((a, b) => b.recordedAt.compareTo(a.recordedAt));
+
+      // Background sync
       _syncRecordingsFromCloud(userId);
 
-      return localRecordings;
+      return validRecordings;
     } catch (e) {
       print('❌ Error fetching recordings: $e');
       return [];
     }
   }
 
-  // Background sync from Firestore
+  // Background sync - ONLY ADD new ones
   Future<void> _syncRecordingsFromCloud(String userId) async {
     try {
+      print('🔄 Background sync recordings...');
+
       QuerySnapshot snapshot = await _firestore
           .collection(AppConstants.usersCollection)
           .doc(userId)
           .collection(AppConstants.recordingsCollection)
           .get();
 
+      print('   Found ${snapshot.docs.length} recordings in Firestore');
+
       for (var doc in snapshot.docs) {
         try {
           RecordingModel recording =
               RecordingModel.fromMap(doc.data() as Map<String, dynamic>);
 
-          // Only save if not already in local
+          // Only ADD if not already in local
           if (_recordingsBox.get(recording.id) == null) {
             await _recordingsBox.put(recording.id, recording);
-            print('📥 Synced recording: ${recording.id}');
+            print('📥 Synced new recording: ${recording.id}');
           }
         } catch (e) {
-          print('⚠️ Error syncing recording: $e');
+          print('⚠️ Error syncing individual recording: $e');
         }
       }
+
+      print('✅ Sync complete. Total local: ${_recordingsBox.length}');
     } catch (e) {
       print('⚠️ Cloud sync failed: $e');
     }
   }
 
-  // DELETE FROM BOTH
+  // DELETE - only when user manually deletes
   Future<void> deleteRecording({
     required String userId,
     required String recordingId,
@@ -278,6 +331,17 @@ class RecordingService {
     } catch (e) {
       throw 'Error deleting recording: $e';
     }
+  }
+
+  // Get count for debugging
+  int getRecordingsCount() {
+    return _recordingsBox.length;
+  }
+
+  // Clear all (for testing only)
+  Future<void> clearAllRecordings() async {
+    await _recordingsBox.clear();
+    print('🗑️ All recordings cleared');
   }
 
   Future<void> dispose() async {

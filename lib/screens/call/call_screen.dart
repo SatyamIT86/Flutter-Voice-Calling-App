@@ -468,36 +468,56 @@ class _CallScreenState extends State<CallScreen> {
       final duration = _callSeconds;
 
       print('💾 Saving call logs...');
+      print('   Base Call ID: $_callLogId');
       print('   Duration: $duration seconds');
 
       final isIncoming = widget.isIncoming;
 
+      // Create UNIQUE ID for current user's call log
+      final currentUserCallLogId = '${_callLogId}_${_currentUserId}';
+
       // Create call log for current user
       final callLog = CallLogModel(
-        id: _callLogId!,
+        id: currentUserCallLogId, // UNIQUE ID
         callerId: isIncoming ? widget.contactUserId : _currentUserId!,
         callerName: isIncoming ? widget.contactName : _currentUserName!,
         receiverId: isIncoming ? _currentUserId! : widget.contactUserId,
         receiverName: isIncoming ? _currentUserName! : widget.contactName,
-        callType: isIncoming ? CallType.incoming : CallType.outgoing,
+        callTypeEnum: isIncoming ? CallType.incoming : CallType.outgoing,
         timestamp: callTime,
         duration: duration,
         recordingUrl: _recordingPath,
         transcript: _transcript.isEmpty ? null : _transcript,
       );
 
-      // Save for current user (LOCAL + CLOUD)
+      print('   Saving for current user with ID: $currentUserCallLogId');
+
+      // Save for current user
       await _callLogService.saveCallLog(callLog, _currentUserId!);
 
+      // Create UNIQUE ID for contact's call log
+      final contactCallLogId = '${_callLogId}_${widget.contactUserId}';
+
       // Create opposite call log for contact
-      final otherCallLog = callLog.copyWith(
-        callType: isIncoming ? CallType.outgoing : CallType.incoming,
+      final otherCallLog = CallLogModel(
+        id: contactCallLogId, // UNIQUE ID
+        callerId: isIncoming ? widget.contactUserId : _currentUserId!,
+        callerName: isIncoming ? widget.contactName : _currentUserName!,
+        receiverId: isIncoming ? _currentUserId! : widget.contactUserId,
+        receiverName: isIncoming ? _currentUserName! : widget.contactName,
+        callTypeEnum: isIncoming ? CallType.outgoing : CallType.incoming,
+        timestamp: callTime,
+        duration: duration,
+        recordingUrl: _recordingPath,
+        transcript: _transcript.isEmpty ? null : _transcript,
       );
 
-      // Save for contact user (LOCAL + CLOUD)
+      print('   Saving for contact user with ID: $contactCallLogId');
+
+      // Save for contact user
       await _callLogService.saveCallLog(otherCallLog, widget.contactUserId);
 
-      print('✅✅ Both call logs saved successfully!');
+      print('✅✅ Both call logs saved with UNIQUE IDs!');
     } catch (e) {
       print('❌ Error saving call log: $e');
     }
