@@ -1,7 +1,9 @@
 // lib/screens/home_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_voicecall_app/models/call_log_model.dart';
 import 'package:flutter_voicecall_app/models/contact_model.dart';
+import 'package:flutter_voicecall_app/models/recording_model.dart';
 import 'package:hive/hive.dart';
 import 'dart:async';
 import '../services/auth_service.dart';
@@ -85,9 +87,15 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           TextButton(
             onPressed: () async {
-              // Clear Hive cache
+              // Clear ALL Hive caches
               await Hive.box<ContactModel>(AppConstants.contactsBox).clear();
+              await Hive.box<CallLogModel>(AppConstants.callLogsBox)
+                  .clear(); // ADD THIS
+              await Hive.box<RecordingModel>(AppConstants.recordingsBox)
+                  .clear(); // ADD THIS
               await Hive.box(AppConstants.settingsBox).clear();
+
+              print('✅ All local data cleared');
 
               // Logout from Firebase
               await _authService.logout();

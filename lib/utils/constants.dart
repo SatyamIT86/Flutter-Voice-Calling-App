@@ -15,6 +15,8 @@ class AppConstants {
 
   // Hive boxes
   static const String contactsBox = 'contacts_box';
+  static const String callLogsBox = 'call_logs_box'; // ADD THIS
+  static const String recordingsBox = 'recordings_box';
   static const String settingsBox = 'settings_box';
 
   // Shared preferences keys

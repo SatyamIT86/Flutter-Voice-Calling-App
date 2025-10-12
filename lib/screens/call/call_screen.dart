@@ -12,6 +12,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/call_log_model.dart';
 import '../../models/call_state_model.dart';
 import 'package:uuid/uuid.dart';
+import '../../services/call_log_service.dart';
 
 class CallScreen extends StatefulWidget {
   final String contactName;
@@ -40,14 +41,16 @@ class _CallScreenState extends State<CallScreen> {
   final _authService = AuthService();
   final _callService = CallService();
   final _firestore = FirebaseFirestore.instance;
+  final _callLogService = CallLogService();
   final _uuid = const Uuid();
 
   bool _isMuted = false;
   bool _isSpeakerOn = true;
   bool _isCallConnected = false;
   bool _isRecording = false;
-  bool _isSpeechToTextEnabled = false; // Changed to false by default
-  bool _recordingEnabled = false; // NEW: Recording toggle
+  bool _isSpeechToTextEnabled = false;
+  bool _recordingEnabled = false;
+  bool _isInitializing = true;
 
   String _transcript = '';
   String _callDuration = '00:00';
@@ -58,44 +61,73 @@ class _CallScreenState extends State<CallScreen> {
   String? _callLogId;
   StreamSubscription? _callStatusSubscription;
 
+  // Store user info immediately
+  String? _currentUserId;
+  String? _currentUserName;
+
   @override
   void initState() {
     super.initState();
+    _initializeUserInfo();
     _initializeCall();
   }
 
   @override
   void dispose() {
+    print('🔴 Disposing CallScreen');
     _callTimer?.cancel();
     _callStatusSubscription?.cancel();
-    _agoraService.destroy();
-    _speechService.dispose();
-    _recordingService.dispose();
+
+    // Don't dispose services here - let endCall handle it
     super.dispose();
+  }
+
+  void _initializeUserInfo() {
+    final currentUser = _authService.currentUser;
+    _currentUserId = currentUser?.uid;
+    _currentUserName = currentUser?.displayName ?? 'Unknown';
+    print('👤 User Info: ID=$_currentUserId, Name=$_currentUserName');
   }
 
   Future<void> _initializeCall() async {
     try {
-      await _agoraService.initialize();
+      print('📞 Initializing call...');
 
-      _agoraService.onUserJoined = (uid, elapsed) {
-        setState(() => _isCallConnected = true);
+      if (_currentUserId == null) {
+        throw 'User not logged in';
+      }
+
+      await _agoraService.initialize();
+      print('✅ Agora initialized');
+
+      // Setup callbacks BEFORE joining
+      _agoraService.onUserJoined = (uid, elapsed) async {
+        print('👥 User joined: $uid');
+        if (!mounted) return;
+
+        setState(() {
+          _isCallConnected = true;
+          _isInitializing = false;
+        });
+
         _startCallTimer();
-        // Recording only starts if enabled
+
+        // Start recording if enabled
         if (_recordingEnabled) {
-          _startRecording();
+          await _startRecording();
         }
-        // Speech-to-text only starts if enabled
+
+        // Start speech-to-text if enabled
         if (_isSpeechToTextEnabled) {
-          _startSpeechToText();
+          await _startSpeechToText();
         }
       };
 
       _agoraService.onUserOffline = (uid, reason) {
+        print('👋 User left: $uid, reason: $reason');
         _endCall();
       };
 
-      final currentUserId = _authService.currentUser?.uid ?? '';
       String channelName;
       String callId;
 
@@ -103,12 +135,14 @@ class _CallScreenState extends State<CallScreen> {
         channelName = widget.channelName!;
         callId = widget.callId!;
         _callLogId = callId;
+        print('📥 Incoming call - Channel: $channelName, ID: $callId');
       } else {
-        channelName = _generateChannelName(currentUserId, widget.contactUserId);
+        channelName =
+            _generateChannelName(_currentUserId!, widget.contactUserId);
 
         final call = await _callService.initiateCall(
-          callerId: currentUserId,
-          callerName: _authService.currentUser?.displayName ?? 'Unknown',
+          callerId: _currentUserId!,
+          callerName: _currentUserName!,
           receiverId: widget.contactUserId,
           receiverName: widget.contactName,
           channelName: channelName,
@@ -116,18 +150,18 @@ class _CallScreenState extends State<CallScreen> {
 
         callId = call.id;
         _callLogId = callId;
+        print('📤 Outgoing call - Channel: $channelName, ID: $callId');
 
         _callStatusSubscription =
             _callService.listenToCallStatus(callId).listen((callState) {
           if (callState == null) {
             if (mounted && !_isCallConnected) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Call ended')),
-              );
+              print('❌ Call ended remotely');
               Navigator.pop(context);
             }
           } else if (callState.status == CallStatus.rejected) {
             if (mounted) {
+              print('🚫 Call rejected');
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Call rejected')),
               );
@@ -136,26 +170,33 @@ class _CallScreenState extends State<CallScreen> {
           }
         });
 
-        Future.delayed(const Duration(seconds: 30), () {
+        // Auto-timeout for outgoing calls
+        Future.delayed(const Duration(seconds: 45), () {
           if (!_isCallConnected && mounted) {
+            print('⏰ Call timeout - no answer');
             _callService.markAsMissed(callId);
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('No answer')),
-            );
             Navigator.pop(context);
           }
         });
       }
 
+      // Join Agora channel
       await _agoraService.joinChannel(
         channelName: channelName,
         token: '',
         uid: 0,
       );
+
+      print('✅ Joined Agora channel: $channelName');
+
+      setState(() {
+        _isInitializing = false;
+      });
     } catch (e) {
+      print('❌ Error initializing call: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error initializing call: $e')),
+          SnackBar(content: Text('Error: $e')),
         );
         Navigator.pop(context);
       }
@@ -168,8 +209,20 @@ class _CallScreenState extends State<CallScreen> {
   }
 
   void _startCallTimer() {
+    if (_callTimer != null && _callTimer!.isActive) {
+      print('⚠️ Timer already running');
+      return;
+    }
+
     _callStartTime = DateTime.now();
+    print('⏱️ Call timer started at ${_callStartTime}');
+
     _callTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
       setState(() {
         _callSeconds++;
         final minutes = _callSeconds ~/ 60;
@@ -177,87 +230,135 @@ class _CallScreenState extends State<CallScreen> {
         _callDuration =
             '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
       });
+
+      // Log every 10 seconds
+      if (_callSeconds % 10 == 0) {
+        print('⏱️ Call duration: $_callDuration ($_callSeconds seconds)');
+      }
     });
   }
 
   Future<void> _startRecording() async {
+    if (_isRecording) {
+      print('⚠️ Already recording');
+      return;
+    }
+
     try {
+      print('🎙️ Starting recording...');
+
       _recordingPath = await _recordingService.startRecording(
-        fileName: 'call_${_callLogId}.m4a',
+        fileName:
+            'call_${_callLogId}_${DateTime.now().millisecondsSinceEpoch}.m4a',
       );
 
       if (_recordingPath != null) {
         setState(() => _isRecording = true);
+        print('✅ Recording started: $_recordingPath');
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Recording started'),
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        print('❌ Recording failed to start - no path returned');
+      }
+    } catch (e) {
+      print('❌ Error starting recording: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Recording failed: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _stopRecording() async {
+    if (!_isRecording) {
+      print('⚠️ Not recording');
+      return;
+    }
+
+    try {
+      print('🛑 Stopping recording...');
+      final path = await _recordingService.stopRecording();
+
+      setState(() => _isRecording = false);
+
+      if (path != null) {
+        print('✅ Recording stopped: $path');
+      }
+
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Recording started'),
+            content: Text('Recording stopped'),
             duration: Duration(seconds: 2),
           ),
         );
       }
     } catch (e) {
-      print('Error starting recording: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Recording failed: $e')),
-      );
-    }
-  }
-
-  Future<void> _stopRecording() async {
-    try {
-      await _recordingService.stopRecording();
-      setState(() => _isRecording = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Recording stopped'),
-          duration: Duration(seconds: 2),
-        ),
-      );
-    } catch (e) {
-      print('Error stopping recording: $e');
+      print('❌ Error stopping recording: $e');
     }
   }
 
   Future<void> _startSpeechToText() async {
     try {
+      print('🎤 Starting speech-to-text...');
+
       _speechService.onResult = (text) {
-        setState(() {
-          _transcript = text;
-        });
+        if (mounted) {
+          setState(() {
+            _transcript = text;
+          });
+        }
       };
 
       _speechService.onError = (error) {
-        print('Speech error: $error');
+        print('❌ Speech error: $error');
       };
 
       await _speechService.startListening();
+      print('✅ Speech-to-text started');
     } catch (e) {
-      print('Error starting speech-to-text: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Speech-to-text failed: $e')),
-      );
+      print('❌ Error starting speech-to-text: $e');
     }
   }
 
   Future<void> _toggleMute() async {
     setState(() => _isMuted = !_isMuted);
     await _agoraService.muteLocalAudio(_isMuted);
+    print('🔇 Mute: $_isMuted');
   }
 
   Future<void> _toggleSpeaker() async {
     setState(() => _isSpeakerOn = !_isSpeakerOn);
     await _agoraService.setSpeakerphone(_isSpeakerOn);
+    print('🔊 Speaker: $_isSpeakerOn');
   }
 
   void _toggleRecording() async {
+    if (!_isCallConnected) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cannot record - call not connected')),
+        );
+      }
+      return;
+    }
+
     if (_isRecording) {
       await _stopRecording();
       setState(() => _recordingEnabled = false);
     } else {
+      setState(() => _recordingEnabled = true);
       if (_isCallConnected) {
         await _startRecording();
       }
-      setState(() => _recordingEnabled = true);
     }
   }
 
@@ -273,29 +374,34 @@ class _CallScreenState extends State<CallScreen> {
       setState(() => _transcript = '');
     }
   }
-// Replace _endCall method in call_screen.dart
 
   Future<void> _endCall() async {
-    try {
-      print('Ending call...');
+    print('📴 Ending call...');
+    print('   Call connected: $_isCallConnected');
+    print('   Call duration: $_callSeconds seconds');
+    print('   Recording: $_isRecording, Path: $_recordingPath');
 
-      // Stop call timer
+    try {
+      // Prevent multiple calls
+      if (_callTimer == null && _callSeconds == 0 && !_isCallConnected) {
+        print('⚠️ Call never connected, skipping save');
+        await _cleanup();
+        if (mounted) Navigator.pop(context);
+        return;
+      }
+
+      // Stop timer first
       _callTimer?.cancel();
 
       // Stop recording
       if (_isRecording) {
-        print('Stopping recording...');
-        final path = await _recordingService.stopRecording();
-        if (path != null) {
-          _recordingPath = path;
-          print('Recording stopped, path: $path');
-        }
+        await _stopRecording();
       }
 
       // Stop speech-to-text
       await _speechService.stopListening();
 
-      // Leave Agora channel
+      // Leave Agora
       await _agoraService.leaveChannel();
 
       // End call in Firestore
@@ -303,121 +409,97 @@ class _CallScreenState extends State<CallScreen> {
         await _callService.endCall(_callLogId!);
       }
 
-      // Save recording metadata FIRST
-      if (_recordingPath != null && _callLogId != null && _isRecording) {
-        final currentUserId = _authService.currentUser?.uid;
-        if (currentUserId != null) {
-          print('Saving recording metadata...');
-          try {
-            await _recordingService.saveRecordingMetadata(
-              userId: currentUserId,
-              callLogId: _callLogId!,
-              localPath: _recordingPath!,
-              contactName: widget.contactName,
-              duration: _callSeconds,
-              transcript: _transcript.isEmpty ? null : _transcript,
-            );
-            print('Recording metadata saved successfully!');
-          } catch (e) {
-            print('Error saving recording metadata: $e');
-          }
+      // Save recording metadata FIRST (if we have a recording)
+      // Save recording metadata FIRST (if we have a recording)
+      if (_recordingPath != null &&
+          _callLogId != null &&
+          _currentUserId != null) {
+        print('💾 Saving recording metadata...');
+        try {
+          final recordingModel = await _recordingService.saveRecordingMetadata(
+            userId: _currentUserId!,
+            callLogId: _callLogId!,
+            localPath: _recordingPath!,
+            contactName: widget.contactName,
+            duration: _callSeconds,
+            transcript: _transcript.isEmpty ? null : _transcript,
+          );
+          print('✅ Recording metadata saved: ${recordingModel.id}');
+        } catch (e) {
+          print('❌ Error saving recording: $e');
         }
-      } else {
-        print(
-            'No recording to save - Path: $_recordingPath, CallLogId: $_callLogId, IsRecording: $_isRecording');
       }
 
       // Save call log AFTER recording
       await _saveCallLog();
 
+      await _cleanup();
+
       if (mounted) {
         Navigator.pop(context);
       }
     } catch (e) {
-      print('Error ending call: $e');
+      print('❌ Error ending call: $e');
+      await _cleanup();
       if (mounted) {
         Navigator.pop(context);
       }
     }
   }
 
+  Future<void> _cleanup() async {
+    try {
+      await _agoraService.destroy();
+      await _speechService.dispose();
+      await _recordingService.dispose();
+    } catch (e) {
+      print('Error during cleanup: $e');
+    }
+  }
+
   Future<void> _saveCallLog() async {
     try {
-      final currentUser = _authService.currentUser;
-      if (currentUser == null) {
-        print('No current user, cannot save call log');
+      if (_currentUserId == null || _callLogId == null) {
+        print('❌ Cannot save call log - missing user ID or call ID');
         return;
       }
 
-      if (_callLogId == null) {
-        print('No call log ID, cannot save');
-        return;
-      }
+      final callTime = _callStartTime ?? DateTime.now();
+      final duration = _callSeconds;
 
-      // Determine caller and receiver info
+      print('💾 Saving call logs...');
+      print('   Duration: $duration seconds');
+
       final isIncoming = widget.isIncoming;
-      final currentUserId = currentUser.uid;
-      final currentUserName = currentUser.displayName ?? 'Unknown';
-      final contactUserId = widget.contactUserId;
-      final contactName = widget.contactName;
-
-      print(
-          'Saving call log - Current User: $currentUserId, Contact: $contactUserId');
 
       // Create call log for current user
       final callLog = CallLogModel(
         id: _callLogId!,
-        callerId: isIncoming ? contactUserId : currentUserId,
-        callerName: isIncoming ? contactName : currentUserName,
-        receiverId: isIncoming ? currentUserId : contactUserId,
-        receiverName: isIncoming ? currentUserName : contactName,
+        callerId: isIncoming ? widget.contactUserId : _currentUserId!,
+        callerName: isIncoming ? widget.contactName : _currentUserName!,
+        receiverId: isIncoming ? _currentUserId! : widget.contactUserId,
+        receiverName: isIncoming ? _currentUserName! : widget.contactName,
         callType: isIncoming ? CallType.incoming : CallType.outgoing,
-        timestamp: _callStartTime ?? DateTime.now(),
-        duration: _callSeconds,
+        timestamp: callTime,
+        duration: duration,
         recordingUrl: _recordingPath,
         transcript: _transcript.isEmpty ? null : _transcript,
       );
 
-      print('Saving call log to current user: ${callLog.toMap()}');
-
-      // Save to current user's call logs
-      await _firestore
-          .collection(AppConstants.usersCollection)
-          .doc(currentUserId)
-          .collection(AppConstants.callLogsCollection)
-          .doc(_callLogId)
-          .set(callLog.toMap());
-
-      print('Call log saved for current user');
+      // Save for current user (LOCAL + CLOUD)
+      await _callLogService.saveCallLog(callLog, _currentUserId!);
 
       // Create opposite call log for contact
-      final otherCallLog = CallLogModel(
-        id: _callLogId!,
-        callerId: isIncoming ? contactUserId : currentUserId,
-        callerName: isIncoming ? contactName : currentUserName,
-        receiverId: isIncoming ? currentUserId : contactUserId,
-        receiverName: isIncoming ? currentUserName : contactName,
+      final otherCallLog = callLog.copyWith(
         callType: isIncoming ? CallType.outgoing : CallType.incoming,
-        timestamp: _callStartTime ?? DateTime.now(),
-        duration: _callSeconds,
-        recordingUrl: _recordingPath,
-        transcript: _transcript.isEmpty ? null : _transcript,
       );
 
-      print('Saving call log to contact user: ${otherCallLog.toMap()}');
+      // Save for contact user (LOCAL + CLOUD)
+      await _callLogService.saveCallLog(otherCallLog, widget.contactUserId);
 
-      // Save to contact's call logs
-      await _firestore
-          .collection(AppConstants.usersCollection)
-          .doc(contactUserId)
-          .collection(AppConstants.callLogsCollection)
-          .doc(_callLogId)
-          .set(otherCallLog.toMap());
-
-      print('Call log saved for contact user');
-      print('Call logs saved successfully!');
+      print('✅✅ Both call logs saved successfully!');
     } catch (e) {
-      print('Error saving call log: $e');
+      print('❌ Error saving call log: $e');
     }
   }
 
@@ -459,7 +541,11 @@ class _CallScreenState extends State<CallScreen> {
                 const SizedBox(height: 8),
 
                 Text(
-                  _isCallConnected ? _callDuration : 'Calling...',
+                  _isCallConnected
+                      ? _callDuration
+                      : _isInitializing
+                          ? 'Connecting...'
+                          : 'Calling...',
                   style: TextStyle(
                     fontSize: 18,
                     color: Colors.white.withOpacity(0.8),
@@ -467,21 +553,21 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Transcript Display
                 if (_isSpeechToTextEnabled && _transcript.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    constraints: const BoxConstraints(maxHeight: 120),
-                    child: SingleChildScrollView(
-                      child: Text(
-                        _transcript,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
+                  Expanded(
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      margin: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: SingleChildScrollView(
+                        reverse: true, // scrolls to bottom as new text is added
+                        child: Text(
+                          _transcript.isNotEmpty ? _transcript : 'Listening...',
+                          style: const TextStyle(fontSize: 16),
                         ),
                       ),
                     ),
@@ -523,7 +609,6 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(height: 24),
 
-                // Call Controls Row 2
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
@@ -541,7 +626,6 @@ class _CallScreenState extends State<CallScreen> {
                 ),
                 const SizedBox(height: 32),
 
-                // Recording Indicator
                 if (_isRecording)
                   Container(
                     padding: const EdgeInsets.symmetric(

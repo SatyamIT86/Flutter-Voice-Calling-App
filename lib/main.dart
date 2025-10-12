@@ -2,8 +2,11 @@
 
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter_voicecall_app/utils/migrate_data.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'models/contact_model.dart';
+import 'models/call_log_model.dart'; // ADD THIS
+import 'models/recording_model.dart';
 import 'screens/splash_screen.dart';
 import 'utils/constants.dart';
 
@@ -17,8 +20,12 @@ void main() async {
   await Hive.initFlutter();
 
   Hive.registerAdapter(ContactModelAdapter());
-
+  Hive.registerAdapter(CallLogModelAdapter()); // ADD THIS
+  Hive.registerAdapter(RecordingModelAdapter());
+  await clearAllHiveData();
   await Hive.openBox<ContactModel>(AppConstants.contactsBox);
+  await Hive.openBox<CallLogModel>(AppConstants.callLogsBox); // ADD THIS
+  await Hive.openBox<RecordingModel>(AppConstants.recordingsBox);
   await Hive.openBox(AppConstants.settingsBox);
 
   runApp(const MyApp());

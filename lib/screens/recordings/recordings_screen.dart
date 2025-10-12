@@ -1,3 +1,5 @@
+// lib/screens/recordings/recordings_screen.dart
+
 import 'package:flutter/material.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:intl/intl.dart';
@@ -76,12 +78,14 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
         setState(() {
           _recordings = recordings;
         });
+        print('📂 Loaded ${recordings.length} recordings');
       }
     } catch (e) {
+      print('Error loading recordings: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error loading recordings: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading recordings: $e')),
+        );
       }
     } finally {
       setState(() => _isLoading = false);
@@ -90,6 +94,8 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
 
   Future<void> _playRecording(RecordingModel recording) async {
     try {
+      print('🎵 Attempting to play: ${recording.localPath}');
+
       if (_playingRecordingId == recording.id && _isPlaying) {
         await _audioPlayer.pause();
       } else if (_playingRecordingId == recording.id && !_isPlaying) {
@@ -102,10 +108,11 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
         });
       }
     } catch (e) {
+      print('❌ Error playing recording: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Error playing recording: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error playing recording: $e')),
+        );
       }
     }
   }
@@ -125,8 +132,7 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Delete Recording'),
         content: Text(
-          'Are you sure you want to delete this recording from ${recording.contactName}?',
-        ),
+            'Are you sure you want to delete this recording from ${recording.contactName}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -139,7 +145,6 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
               try {
                 final userId = _authService.currentUser?.uid;
                 if (userId != null) {
-                  // Stop playback if this recording is playing
                   if (_playingRecordingId == recording.id) {
                     await _stopRecording();
                   }
@@ -148,7 +153,6 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
                     userId: userId,
                     recordingId: recording.id,
                     localPath: recording.localPath,
-                    cloudUrl: recording.cloudUrl,
                   );
 
                   _loadRecordings();
@@ -212,212 +216,212 @@ class _RecordingsScreenState extends State<RecordingsScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _recordings.isEmpty
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.mic_none,
-                    size: 80,
-                    color: AppColors.textSecondary.withOpacity(0.5),
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.mic_none,
+                        size: 80,
+                        color: AppColors.textSecondary.withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'No recordings yet',
+                        style: TextStyle(
+                          fontSize: 18,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Enable recording during calls',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No recordings yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadRecordings,
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: _recordings.length,
-                itemBuilder: (context, index) {
-                  final recording = _recordings[index];
-                  final isPlaying =
-                      _playingRecordingId == recording.id && _isPlaying;
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadRecordings,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _recordings.length,
+                    itemBuilder: (context, index) {
+                      final recording = _recordings[index];
+                      final isPlaying =
+                          _playingRecordingId == recording.id && _isPlaying;
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 2,
-                    child: Column(
-                      children: [
-                        ListTile(
-                          contentPadding: const EdgeInsets.all(12),
-                          leading: CircleAvatar(
-                            backgroundColor: AppColors.primaryColor.withOpacity(
-                              0.1,
-                            ),
-                            child: Icon(
-                              Icons.mic,
-                              color: AppColors.primaryColor,
-                            ),
-                          ),
-                          title: Text(
-                            recording.contactName,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                            ),
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Text(
-                                DateFormat(
-                                  'MMM dd, yyyy HH:mm',
-                                ).format(recording.recordedAt),
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 12,
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                        child: Column(
+                          children: [
+                            ListTile(
+                              contentPadding: const EdgeInsets.all(12),
+                              leading: CircleAvatar(
+                                backgroundColor:
+                                    AppColors.primaryColor.withOpacity(0.1),
+                                child: Icon(
+                                  Icons.mic,
+                                  color: AppColors.primaryColor,
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '${recording.formattedDuration} • ${recording.formattedSize}',
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 12,
+                              title: Text(
+                                recording.contactName,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
                                 ),
                               ),
-                            ],
-                          ),
-                          trailing: PopupMenuButton(
-                            icon: const Icon(Icons.more_vert),
-                            itemBuilder: (context) => [
-                              if (recording.transcript != null)
-                                const PopupMenuItem(
-                                  value: 'transcript',
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.text_snippet_outlined),
-                                      SizedBox(width: 8),
-                                      Text('View Transcript'),
-                                    ],
-                                  ),
-                                ),
-                              const PopupMenuItem(
-                                value: 'delete',
-                                child: Row(
-                                  children: [
-                                    Icon(
-                                      Icons.delete_outline,
-                                      color: Colors.red,
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    DateFormat('MMM dd, yyyy HH:mm')
+                                        .format(recording.recordedAt),
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
                                     ),
-                                    SizedBox(width: 8),
-                                    Text(
-                                      'Delete',
-                                      style: TextStyle(color: Colors.red),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${recording.formattedDuration} • ${recording.formattedSize}',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              trailing: PopupMenuButton(
+                                icon: const Icon(Icons.more_vert),
+                                itemBuilder: (context) => [
+                                  if (recording.transcript != null)
+                                    const PopupMenuItem(
+                                      value: 'transcript',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.text_snippet_outlined),
+                                          SizedBox(width: 8),
+                                          Text('View Transcript'),
+                                        ],
+                                      ),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: 'delete',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.delete_outline,
+                                            color: Colors.red),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Delete',
+                                          style: TextStyle(color: Colors.red),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                onSelected: (value) {
+                                  if (value == 'transcript') {
+                                    _showTranscript(recording);
+                                  } else if (value == 'delete') {
+                                    _deleteRecording(recording);
+                                  }
+                                },
+                              ),
+                            ),
+                            if (_playingRecordingId == recording.id)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                                child: Column(
+                                  children: [
+                                    SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 2,
+                                        thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 6,
+                                        ),
+                                      ),
+                                      child: Slider(
+                                        value: _currentPosition.inSeconds
+                                            .toDouble(),
+                                        max:
+                                            _totalDuration.inSeconds.toDouble(),
+                                        activeColor: AppColors.primaryColor,
+                                        onChanged: (value) async {
+                                          await _audioPlayer.seek(
+                                            Duration(seconds: value.toInt()),
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [
+                                          Text(
+                                            _formatDuration(_currentPosition),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                          Text(
+                                            _formatDuration(_totalDuration),
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: AppColors.textSecondary,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ],
                                 ),
                               ),
-                            ],
-                            onSelected: (value) {
-                              if (value == 'transcript') {
-                                _showTranscript(recording);
-                              } else if (value == 'delete') {
-                                _deleteRecording(recording);
-                              }
-                            },
-                          ),
-                        ),
-
-                        // Player Controls (only show for playing recording)
-                        if (_playingRecordingId == recording.id)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                            child: Column(
-                              children: [
-                                // Progress Bar
-                                SliderTheme(
-                                  data: SliderTheme.of(context).copyWith(
-                                    trackHeight: 2,
-                                    thumbShape: const RoundSliderThumbShape(
-                                      enabledThumbRadius: 6,
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  if (_playingRecordingId == recording.id)
+                                    IconButton(
+                                      onPressed: _stopRecording,
+                                      icon: const Icon(Icons.stop),
+                                      color: AppColors.dangerColor,
                                     ),
+                                  IconButton(
+                                    onPressed: () => _playRecording(recording),
+                                    icon: Icon(
+                                      isPlaying
+                                          ? Icons.pause
+                                          : Icons.play_arrow,
+                                    ),
+                                    color: AppColors.primaryColor,
+                                    iconSize: 32,
                                   ),
-                                  child: Slider(
-                                    value: _currentPosition.inSeconds
-                                        .toDouble(),
-                                    max: _totalDuration.inSeconds.toDouble(),
-                                    activeColor: AppColors.primaryColor,
-                                    onChanged: (value) async {
-                                      await _audioPlayer.seek(
-                                        Duration(seconds: value.toInt()),
-                                      );
-                                    },
-                                  ),
-                                ),
-
-                                // Time Labels
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                  ),
-                                  child: Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        _formatDuration(_currentPosition),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                      Text(
-                                        _formatDuration(_totalDuration),
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: AppColors.textSecondary,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                        // Play/Pause Button
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              if (_playingRecordingId == recording.id)
-                                IconButton(
-                                  onPressed: _stopRecording,
-                                  icon: const Icon(Icons.stop),
-                                  color: AppColors.dangerColor,
-                                ),
-                              IconButton(
-                                onPressed: () => _playRecording(recording),
-                                icon: Icon(
-                                  isPlaying ? Icons.pause : Icons.play_arrow,
-                                ),
-                                color: AppColors.primaryColor,
-                                iconSize: 32,
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }

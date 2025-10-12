@@ -1,14 +1,36 @@
 // lib/models/recording_model.dart
 
-class RecordingModel {
+import 'package:hive/hive.dart';
+
+part 'recording_model.g.dart';
+
+@HiveType(typeId: 2) // ADD HIVE ANNOTATION
+class RecordingModel extends HiveObject {
+  @HiveField(0)
   final String id;
+
+  @HiveField(1)
   final String callLogId;
+
+  @HiveField(2)
   final String localPath;
+
+  @HiveField(3)
   final String? cloudUrl;
+
+  @HiveField(4)
   final String contactName;
+
+  @HiveField(5)
   final DateTime recordedAt;
+
+  @HiveField(6)
   final int duration;
+
+  @HiveField(7)
   final String? transcript;
+
+  @HiveField(8)
   final int fileSize;
 
   RecordingModel({
@@ -44,9 +66,8 @@ class RecordingModel {
       localPath: map['localPath'] ?? '',
       cloudUrl: map['cloudUrl'],
       contactName: map['contactName'] ?? '',
-      recordedAt: DateTime.parse(
-        map['recordedAt'] ?? DateTime.now().toIso8601String(),
-      ),
+      recordedAt:
+          DateTime.parse(map['recordedAt'] ?? DateTime.now().toIso8601String()),
       duration: map['duration'] ?? 0,
       transcript: map['transcript'],
       fileSize: map['fileSize'] ?? 0,

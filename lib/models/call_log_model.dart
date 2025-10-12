@@ -1,15 +1,41 @@
+// lib/models/call_log_model.dart
+
+import 'package:hive/hive.dart';
+
+part 'call_log_model.g.dart';
+
 enum CallType { incoming, outgoing, missed }
 
-class CallLogModel {
+@HiveType(typeId: 1) // ADD HIVE ANNOTATION
+class CallLogModel extends HiveObject {
+  @HiveField(0)
   final String id;
+
+  @HiveField(1)
   final String callerId;
+
+  @HiveField(2)
   final String callerName;
+
+  @HiveField(3)
   final String receiverId;
+
+  @HiveField(4)
   final String receiverName;
-  final CallType callType;
+
+  @HiveField(5)
+  final String callType; // Store as string
+
+  @HiveField(6)
   final DateTime timestamp;
-  final int duration; // in seconds
+
+  @HiveField(7)
+  final int duration;
+
+  @HiveField(8)
   final String? recordingUrl;
+
+  @HiveField(9)
   final String? transcript;
 
   CallLogModel({
@@ -18,12 +44,20 @@ class CallLogModel {
     required this.callerName,
     required this.receiverId,
     required this.receiverName,
-    required this.callType,
+    required CallType callType,
     required this.timestamp,
     required this.duration,
     this.recordingUrl,
     this.transcript,
-  });
+  }) : callType = callType.toString().split('.').last;
+
+  // Get CallType enum from string
+  CallType get callTypeEnum {
+    return CallType.values.firstWhere(
+      (e) => e.toString().split('.').last == callType,
+      orElse: () => CallType.outgoing,
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -32,7 +66,7 @@ class CallLogModel {
       'callerName': callerName,
       'receiverId': receiverId,
       'receiverName': receiverName,
-      'callType': callType.toString().split('.').last,
+      'callType': callType,
       'timestamp': timestamp.toIso8601String(),
       'duration': duration,
       'recordingUrl': recordingUrl,
@@ -51,9 +85,8 @@ class CallLogModel {
         (e) => e.toString().split('.').last == map['callType'],
         orElse: () => CallType.outgoing,
       ),
-      timestamp: DateTime.parse(
-        map['timestamp'] ?? DateTime.now().toIso8601String(),
-      ),
+      timestamp:
+          DateTime.parse(map['timestamp'] ?? DateTime.now().toIso8601String()),
       duration: map['duration'] ?? 0,
       recordingUrl: map['recordingUrl'],
       transcript: map['transcript'],
@@ -84,7 +117,7 @@ class CallLogModel {
       callerName: callerName ?? this.callerName,
       receiverId: receiverId ?? this.receiverId,
       receiverName: receiverName ?? this.receiverName,
-      callType: callType ?? this.callType,
+      callType: callType ?? this.callTypeEnum,
       timestamp: timestamp ?? this.timestamp,
       duration: duration ?? this.duration,
       recordingUrl: recordingUrl ?? this.recordingUrl,

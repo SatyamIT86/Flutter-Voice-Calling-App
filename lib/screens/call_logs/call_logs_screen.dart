@@ -1,8 +1,10 @@
+// lib/screens/call_logs/call_logs_screen.dart
+
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import '../../models/call_log_model.dart';
 import '../../services/auth_service.dart';
+import '../../services/call_log_service.dart';
 import '../../utils/constants.dart';
 
 class CallLogsScreen extends StatefulWidget {
@@ -14,23 +16,33 @@ class CallLogsScreen extends StatefulWidget {
 
 class _CallLogsScreenState extends State<CallLogsScreen> {
   final _authService = AuthService();
-  final _firestore = FirebaseFirestore.instance;
+  final _callLogService = CallLogService();
 
-  Stream<List<CallLogModel>> _getCallLogsStream() {
-    final userId = _authService.currentUser?.uid;
-    if (userId == null) return Stream.value([]);
+  List<CallLogModel> _callLogs = [];
+  bool _isLoading = true;
 
-    return _firestore
-        .collection(AppConstants.usersCollection)
-        .doc(userId)
-        .collection(AppConstants.callLogsCollection)
-        .orderBy('timestamp', descending: true)
-        .snapshots()
-        .map((snapshot) {
-          return snapshot.docs
-              .map((doc) => CallLogModel.fromMap(doc.data()))
-              .toList();
+  @override
+  void initState() {
+    super.initState();
+    _loadCallLogs();
+  }
+
+  Future<void> _loadCallLogs() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final userId = _authService.currentUser?.uid;
+      if (userId != null) {
+        final logs = await _callLogService.getCallLogs(userId);
+        setState(() {
+          _callLogs = logs;
         });
+      }
+    } catch (e) {
+      print('Error loading call logs: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   IconData _getCallIcon(CallType callType) {
@@ -100,10 +112,8 @@ class _CallLogsScreenState extends State<CallLogsScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // Contact Name
                 Text(
-                  callLog.callType == CallType.outgoing
+                  callLog.callTypeEnum == CallType.outgoing
                       ? callLog.receiverName
                       : callLog.callerName,
                   style: const TextStyle(
@@ -113,8 +123,6 @@ class _CallLogsScreenState extends State<CallLogsScreen> {
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 24),
-
-                // Call Details
                 _buildDetailRow(
                   icon: Icons.access_time,
                   label: 'Duration',
@@ -123,27 +131,23 @@ class _CallLogsScreenState extends State<CallLogsScreen> {
                 _buildDetailRow(
                   icon: Icons.calendar_today,
                   label: 'Date',
-                  value: DateFormat(
-                    'MMM dd, yyyy HH:mm',
-                  ).format(callLog.timestamp),
+                  value: DateFormat('MMM dd, yyyy HH:mm')
+                      .format(callLog.timestamp),
                 ),
                 _buildDetailRow(
-                  icon: _getCallIcon(callLog.callType),
+                  icon: _getCallIcon(callLog.callTypeEnum),
                   label: 'Type',
-                  value: callLog.callType
-                      .toString()
-                      .split('.')
-                      .last
-                      .toUpperCase(),
+                  value: callLog.callType.toUpperCase(),
                 ),
-
-                // Transcript Section
                 if (callLog.transcript != null &&
                     callLog.transcript!.isNotEmpty) ...[
                   const SizedBox(height: 24),
                   const Text(
                     'Transcript',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Container(
@@ -182,12 +186,18 @@ class _CallLogsScreenState extends State<CallLogsScreen> {
           const SizedBox(width: 12),
           Text(
             '$label: ',
-            style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+            style: TextStyle(
+              fontSize: 16,
+              color: AppColors.textSecondary,
+            ),
           ),
           Expanded(
             child: Text(
               value,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
         ],
@@ -199,129 +209,113 @@ class _CallLogsScreenState extends State<CallLogsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.backgroundColor,
-      body: StreamBuilder<List<CallLogModel>>(
-        stream: _getCallLogsStream(),
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-
-          final callLogs = snapshot.data ?? [];
-
-          if (callLogs.isEmpty) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.history_outlined,
-                    size: 80,
-                    color: AppColors.textSecondary.withOpacity(0.5),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'No call history yet',
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }
-
-          return ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: callLogs.length,
-            itemBuilder: (context, index) {
-              final callLog = callLogs[index];
-              final contactName = callLog.callType == CallType.outgoing
-                  ? callLog.receiverName
-                  : callLog.callerName;
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                elevation: 2,
-                child: ListTile(
-                  onTap: () => _showCallDetails(callLog),
-                  contentPadding: const EdgeInsets.all(12),
-                  leading: CircleAvatar(
-                    backgroundColor: _getCallColor(
-                      callLog.callType,
-                    ).withOpacity(0.1),
-                    child: Icon(
-                      _getCallIcon(callLog.callType),
-                      color: _getCallColor(callLog.callType),
-                    ),
-                  ),
-                  title: Text(
-                    contactName,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 4),
-                      Text(
-                        callLog.callType
-                            .toString()
-                            .split('.')
-                            .last
-                            .toUpperCase(),
-                        style: TextStyle(
-                          color: _getCallColor(callLog.callType),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Duration: ${callLog.formattedDuration}',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                  trailing: Column(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _callLogs.isEmpty
+              ? Center(
+                  child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
+                      Icon(
+                        Icons.history_outlined,
+                        size: 80,
+                        color: AppColors.textSecondary.withOpacity(0.5),
+                      ),
+                      const SizedBox(height: 16),
                       Text(
-                        _formatTimestamp(callLog.timestamp),
+                        'No call history yet',
                         style: TextStyle(
+                          fontSize: 18,
                           color: AppColors.textSecondary,
-                          fontSize: 12,
                         ),
                       ),
-                      if (callLog.recordingUrl != null) ...[
-                        const SizedBox(height: 4),
-                        Icon(
-                          Icons.mic,
-                          size: 16,
-                          color: AppColors.primaryColor,
-                        ),
-                      ],
                     ],
                   ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadCallLogs,
+                  child: ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _callLogs.length,
+                    itemBuilder: (context, index) {
+                      final callLog = _callLogs[index];
+                      final contactName =
+                          callLog.callTypeEnum == CallType.outgoing
+                              ? callLog.receiverName
+                              : callLog.callerName;
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 2,
+                        child: ListTile(
+                          onTap: () => _showCallDetails(callLog),
+                          contentPadding: const EdgeInsets.all(12),
+                          leading: CircleAvatar(
+                            backgroundColor: _getCallColor(callLog.callTypeEnum)
+                                .withOpacity(0.1),
+                            child: Icon(
+                              _getCallIcon(callLog.callTypeEnum),
+                              color: _getCallColor(callLog.callTypeEnum),
+                            ),
+                          ),
+                          title: Text(
+                            contactName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                            ),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text(
+                                callLog.callType.toUpperCase(),
+                                style: TextStyle(
+                                  color: _getCallColor(callLog.callTypeEnum),
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Duration: ${callLog.formattedDuration}',
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
+                          trailing: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                _formatTimestamp(callLog.timestamp),
+                                style: TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
+                              ),
+                              if (callLog.recordingUrl != null) ...[
+                                const SizedBox(height: 4),
+                                Icon(
+                                  Icons.mic,
+                                  size: 16,
+                                  color: AppColors.primaryColor,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
                 ),
-              );
-            },
-          );
-        },
-      ),
     );
   }
 }

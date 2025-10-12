@@ -43,14 +43,6 @@ class SpeechService {
             _isListening = true;
           } else if (status == 'notListening' || status == 'done') {
             _isListening = false;
-            // Auto-restart if it was manually enabled
-            if (_isInitialized) {
-              Future.delayed(const Duration(milliseconds: 500), () {
-                if (!_isListening && _isInitialized) {
-                  startListening();
-                }
-              });
-            }
           }
         },
       );
