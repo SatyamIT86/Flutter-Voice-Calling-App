@@ -82,7 +82,7 @@ class AuthService {
     }
   }
 
-  // Logout - IMPROVED
+  // Logout
   Future<void> logout() async {
     try {
       await _auth.signOut();
