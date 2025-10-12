@@ -273,37 +273,62 @@ class _CallScreenState extends State<CallScreen> {
       setState(() => _transcript = '');
     }
   }
+// Replace _endCall method in call_screen.dart
 
   Future<void> _endCall() async {
     try {
+      print('Ending call...');
+
+      // Stop call timer
       _callTimer?.cancel();
 
+      // Stop recording
       if (_isRecording) {
-        await _recordingService.stopRecording();
+        print('Stopping recording...');
+        final path = await _recordingService.stopRecording();
+        if (path != null) {
+          _recordingPath = path;
+          print('Recording stopped, path: $path');
+        }
       }
 
+      // Stop speech-to-text
       await _speechService.stopListening();
+
+      // Leave Agora channel
       await _agoraService.leaveChannel();
 
+      // End call in Firestore
       if (_callLogId != null) {
         await _callService.endCall(_callLogId!);
       }
 
-      await _saveCallLog();
-
-      if (_recordingPath != null && _callLogId != null) {
+      // Save recording metadata FIRST
+      if (_recordingPath != null && _callLogId != null && _isRecording) {
         final currentUserId = _authService.currentUser?.uid;
         if (currentUserId != null) {
-          await _recordingService.saveRecordingMetadata(
-            userId: currentUserId,
-            callLogId: _callLogId!,
-            localPath: _recordingPath!,
-            contactName: widget.contactName,
-            duration: _callSeconds,
-            transcript: _transcript.isEmpty ? null : _transcript,
-          );
+          print('Saving recording metadata...');
+          try {
+            await _recordingService.saveRecordingMetadata(
+              userId: currentUserId,
+              callLogId: _callLogId!,
+              localPath: _recordingPath!,
+              contactName: widget.contactName,
+              duration: _callSeconds,
+              transcript: _transcript.isEmpty ? null : _transcript,
+            );
+            print('Recording metadata saved successfully!');
+          } catch (e) {
+            print('Error saving recording metadata: $e');
+          }
         }
+      } else {
+        print(
+            'No recording to save - Path: $_recordingPath, CallLogId: $_callLogId, IsRecording: $_isRecording');
       }
+
+      // Save call log AFTER recording
+      await _saveCallLog();
 
       if (mounted) {
         Navigator.pop(context);
@@ -319,43 +344,78 @@ class _CallScreenState extends State<CallScreen> {
   Future<void> _saveCallLog() async {
     try {
       final currentUser = _authService.currentUser;
-      if (currentUser == null || _callLogId == null) return;
+      if (currentUser == null) {
+        print('No current user, cannot save call log');
+        return;
+      }
 
+      if (_callLogId == null) {
+        print('No call log ID, cannot save');
+        return;
+      }
+
+      // Determine caller and receiver info
+      final isIncoming = widget.isIncoming;
+      final currentUserId = currentUser.uid;
+      final currentUserName = currentUser.displayName ?? 'Unknown';
+      final contactUserId = widget.contactUserId;
+      final contactName = widget.contactName;
+
+      print(
+          'Saving call log - Current User: $currentUserId, Contact: $contactUserId');
+
+      // Create call log for current user
       final callLog = CallLogModel(
         id: _callLogId!,
-        callerId: widget.isIncoming ? widget.contactUserId : currentUser.uid,
-        callerName: widget.isIncoming
-            ? widget.contactName
-            : (currentUser.displayName ?? 'Unknown'),
-        receiverId: widget.isIncoming ? currentUser.uid : widget.contactUserId,
-        receiverName: widget.isIncoming
-            ? (currentUser.displayName ?? 'Unknown')
-            : widget.contactName,
-        callType: widget.isIncoming ? CallType.incoming : CallType.outgoing,
+        callerId: isIncoming ? contactUserId : currentUserId,
+        callerName: isIncoming ? contactName : currentUserName,
+        receiverId: isIncoming ? currentUserId : contactUserId,
+        receiverName: isIncoming ? currentUserName : contactName,
+        callType: isIncoming ? CallType.incoming : CallType.outgoing,
         timestamp: _callStartTime ?? DateTime.now(),
         duration: _callSeconds,
         recordingUrl: _recordingPath,
         transcript: _transcript.isEmpty ? null : _transcript,
       );
 
+      print('Saving call log to current user: ${callLog.toMap()}');
+
+      // Save to current user's call logs
       await _firestore
           .collection(AppConstants.usersCollection)
-          .doc(currentUser.uid)
+          .doc(currentUserId)
           .collection(AppConstants.callLogsCollection)
           .doc(_callLogId)
           .set(callLog.toMap());
 
-      final otherCallLog = callLog.copyWith(
-        callType: widget.isIncoming ? CallType.outgoing : CallType.incoming,
+      print('Call log saved for current user');
+
+      // Create opposite call log for contact
+      final otherCallLog = CallLogModel(
+        id: _callLogId!,
+        callerId: isIncoming ? contactUserId : currentUserId,
+        callerName: isIncoming ? contactName : currentUserName,
+        receiverId: isIncoming ? currentUserId : contactUserId,
+        receiverName: isIncoming ? currentUserName : contactName,
+        callType: isIncoming ? CallType.outgoing : CallType.incoming,
+        timestamp: _callStartTime ?? DateTime.now(),
+        duration: _callSeconds,
+        recordingUrl: _recordingPath,
+        transcript: _transcript.isEmpty ? null : _transcript,
       );
 
-      final otherUserId = widget.contactUserId;
+      print('Saving call log to contact user: ${otherCallLog.toMap()}');
+
+      // Save to contact's call logs
       await _firestore
           .collection(AppConstants.usersCollection)
-          .doc(otherUserId)
+          .doc(contactUserId)
           .collection(AppConstants.callLogsCollection)
           .doc(_callLogId)
           .set(otherCallLog.toMap());
+
+      print('Call log saved for contact user');
+      print('Call logs saved successfully!');
     } catch (e) {
       print('Error saving call log: $e');
     }

@@ -8,6 +8,7 @@ class SpeechService {
   bool _isInitialized = false;
   bool _isListening = false;
   String _transcription = '';
+  String _lastWords = '';
 
   // Callbacks
   Function(String text)? onResult;
@@ -23,7 +24,6 @@ class SpeechService {
   Future<bool> initialize() async {
     if (_isInitialized) return true;
 
-    // Request microphone permission
     PermissionStatus status = await Permission.microphone.request();
     if (!status.isGranted) {
       onError?.call('Microphone permission denied');
@@ -33,29 +33,38 @@ class SpeechService {
     try {
       _isInitialized = await _speechToText.initialize(
         onError: (error) {
-          print('Speech recognition error: ${error.errorMsg}');
+          print('Speech error: ${error.errorMsg}');
           onError?.call(error.errorMsg);
           _isListening = false;
         },
         onStatus: (status) {
-          print('Speech recognition status: $status');
+          print('Speech status: $status');
           if (status == 'listening') {
             _isListening = true;
           } else if (status == 'notListening' || status == 'done') {
             _isListening = false;
+            // Auto-restart if it was manually enabled
+            if (_isInitialized) {
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (!_isListening && _isInitialized) {
+                  startListening();
+                }
+              });
+            }
           }
         },
       );
 
+      print('Speech-to-text initialized: $_isInitialized');
       return _isInitialized;
     } catch (e) {
-      print('Error initializing speech recognition: $e');
+      print('Error initializing speech: $e');
       onError?.call('Failed to initialize speech recognition');
       return false;
     }
   }
 
-  // Start listening with better configuration
+  // Start listening
   Future<void> startListening({
     String localeId = 'en_US',
     bool partialResults = true,
@@ -71,35 +80,41 @@ class SpeechService {
     }
 
     try {
-      // Clear previous transcription
-      _transcription = '';
+      print('Starting speech recognition...');
 
       await _speechToText.listen(
         onResult: (result) {
+          print('Speech result: ${result.recognizedWords}');
+
           if (result.finalResult) {
-            // Append final results with space
-            _transcription += (result.recognizedWords + ' ');
+            // Append final result with space
+            if (result.recognizedWords.isNotEmpty &&
+                result.recognizedWords != _lastWords) {
+              _transcription += result.recognizedWords + '. ';
+              _lastWords = result.recognizedWords;
+              onResult?.call(_transcription.trim());
+            }
           } else {
-            // Show partial results (temporary)
-            _transcription = result.recognizedWords;
+            // Show temporary partial result
+            final tempTranscript = _transcription + result.recognizedWords;
+            onResult?.call(tempTranscript.trim());
           }
-          onResult?.call(_transcription);
         },
-        listenFor: const Duration(minutes: 10), // Increased duration
-        pauseFor: const Duration(seconds: 5), // Longer pause before stopping
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 5),
         partialResults: partialResults,
         localeId: localeId,
         onSoundLevelChange: (level) {
           onSoundLevel?.call(level);
         },
-        cancelOnError: true,
-        listenMode: ListenMode.dictation, // Changed to dictation mode
+        cancelOnError: false,
+        listenMode: ListenMode.dictation,
       );
 
       _isListening = true;
-      print('Started listening for speech');
+      print('Speech recognition started');
     } catch (e) {
-      print('Error starting speech recognition: $e');
+      print('Error starting speech: $e');
       onError?.call('Failed to start listening');
       _isListening = false;
     }
@@ -112,9 +127,10 @@ class SpeechService {
     try {
       await _speechToText.stop();
       _isListening = false;
+      _isInitialized = false; // Prevent auto-restart
+      print('Speech recognition stopped');
     } catch (e) {
-      print('Error stopping speech recognition: $e');
-      onError?.call('Failed to stop listening');
+      print('Error stopping speech: $e');
     }
   }
 
@@ -123,9 +139,11 @@ class SpeechService {
     try {
       await _speechToText.cancel();
       _isListening = false;
+      _isInitialized = false;
       _transcription = '';
+      _lastWords = '';
     } catch (e) {
-      print('Error canceling speech recognition: $e');
+      print('Error canceling speech: $e');
     }
   }
 
@@ -139,19 +157,21 @@ class SpeechService {
 
   // Get transcription
   String getTranscription() {
-    return _transcription;
+    return _transcription.trim();
   }
 
   // Clear transcription
   void clearTranscription() {
     _transcription = '';
+    _lastWords = '';
   }
 
   // Dispose
   Future<void> dispose() async {
-    if (_isListening) {
-      await stopListening();
-    }
     _isInitialized = false;
+    if (_isListening) {
+      await _speechToText.stop();
+    }
+    _isListening = false;
   }
 }

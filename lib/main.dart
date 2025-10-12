@@ -1,10 +1,10 @@
+// lib/main.dart
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'models/contact_model.dart';
-import 'screens/auth/login_screen.dart';
-import 'screens/home_screen.dart';
-import 'services/auth_service.dart';
+import 'screens/splash_screen.dart';
 import 'utils/constants.dart';
 
 void main() async {
@@ -16,10 +16,8 @@ void main() async {
   // Initialize Hive
   await Hive.initFlutter();
 
-  // Register Hive Adapters
   Hive.registerAdapter(ContactModelAdapter());
 
-  // Open Hive Boxes
   await Hive.openBox<ContactModel>(AppConstants.contactsBox);
   await Hive.openBox(AppConstants.settingsBox);
 
@@ -91,39 +89,7 @@ class MyApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: const AuthWrapper(),
-    );
-  }
-}
-
-class AuthWrapper extends StatelessWidget {
-  const AuthWrapper({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    final authService = AuthService();
-
-    return StreamBuilder(
-      stream: authService.authStateChanges,
-      builder: (context, snapshot) {
-        // Show loading while checking auth state
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return Scaffold(
-            backgroundColor: AppColors.backgroundColor,
-            body: Center(
-              child: CircularProgressIndicator(color: AppColors.primaryColor),
-            ),
-          );
-        }
-
-        // If user is logged in, show home screen
-        if (snapshot.hasData) {
-          return const HomeScreen();
-        }
-
-        // Otherwise show login screen
-        return const LoginScreen();
-      },
+      home: const SplashScreen(),
     );
   }
 }

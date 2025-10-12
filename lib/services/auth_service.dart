@@ -1,3 +1,5 @@
+// lib/services/auth_service.dart
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_model.dart';
@@ -20,11 +22,12 @@ class AuthService {
     String? phoneNumber,
   }) async {
     try {
-      // Create user with Firebase Auth
-      UserCredential userCredential = await _auth
-          .createUserWithEmailAndPassword(email: email, password: password);
+      UserCredential userCredential =
+          await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
 
-      // Create user model
       UserModel userModel = UserModel(
         uid: userCredential.user!.uid,
         name: name,
@@ -33,13 +36,11 @@ class AuthService {
         createdAt: DateTime.now(),
       );
 
-      // Save user data to Firestore
       await _firestore
           .collection('users')
           .doc(userCredential.user!.uid)
           .set(userModel.toMap());
 
-      // Update display name
       await userCredential.user!.updateDisplayName(name);
 
       return userModel;
@@ -56,12 +57,14 @@ class AuthService {
     required String password,
   }) async {
     try {
+      // IMPORTANT: Sign out first to ensure clean login
+      await _auth.signOut();
+
       UserCredential userCredential = await _auth.signInWithEmailAndPassword(
         email: email,
         password: password,
       );
 
-      // Get user data from Firestore
       DocumentSnapshot doc = await _firestore
           .collection('users')
           .doc(userCredential.user!.uid)
@@ -79,10 +82,11 @@ class AuthService {
     }
   }
 
-  // Logout
+  // Logout - IMPROVED
   Future<void> logout() async {
     try {
       await _auth.signOut();
+      print('User logged out successfully');
     } catch (e) {
       throw 'Error logging out: $e';
     }
@@ -91,10 +95,8 @@ class AuthService {
   // Get user data by UID
   Future<UserModel?> getUserData(String uid) async {
     try {
-      DocumentSnapshot doc = await _firestore
-          .collection('users')
-          .doc(uid)
-          .get();
+      DocumentSnapshot doc =
+          await _firestore.collection('users').doc(uid).get();
 
       if (doc.exists) {
         return UserModel.fromMap(doc.data() as Map<String, dynamic>);

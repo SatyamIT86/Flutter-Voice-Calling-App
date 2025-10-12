@@ -1,6 +1,8 @@
 // lib/screens/home_screen.dart
 
 import 'package:flutter/material.dart';
+import 'package:flutter_voicecall_app/models/contact_model.dart';
+import 'package:hive/hive.dart';
 import 'dart:async';
 import '../services/auth_service.dart';
 import '../services/call_service.dart';
@@ -83,7 +85,13 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           TextButton(
             onPressed: () async {
+              // Clear Hive cache
+              await Hive.box<ContactModel>(AppConstants.contactsBox).clear();
+              await Hive.box(AppConstants.settingsBox).clear();
+
+              // Logout from Firebase
               await _authService.logout();
+
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const LoginScreen()),
