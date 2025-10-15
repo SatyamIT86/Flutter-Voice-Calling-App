@@ -1,5 +1,3 @@
-// lib/models/call_log_model.dart
-
 import 'package:hive/hive.dart';
 
 part 'call_log_model.g.dart';
@@ -37,6 +35,8 @@ class CallLogModel extends HiveObject {
 
   @HiveField(9)
   final String? transcript;
+  @HiveField(10) // new field
+  final bool hasTranscript;
 
   CallLogModel({
     required this.id,
@@ -49,6 +49,7 @@ class CallLogModel extends HiveObject {
     required this.duration,
     this.recordingUrl,
     this.transcript,
+    required this.hasTranscript, // new required field
   }) : callType = callTypeEnum.name;
 
   CallType get callTypeEnum {
@@ -80,10 +81,11 @@ class CallLogModel extends HiveObject {
   }
 
   factory CallLogModel.fromMap(Map<String, dynamic> map) {
-    CallType type;
     try {
+      CallType type;
       final callTypeStr =
           (map['callType'] ?? 'outgoing').toString().toLowerCase();
+
       switch (callTypeStr) {
         case 'incoming':
           type = CallType.incoming;
@@ -95,25 +97,57 @@ class CallLogModel extends HiveObject {
           type = CallType.missed;
           break;
         default:
+          print('⚠️ Unknown call type: $callTypeStr, defaulting to outgoing');
           type = CallType.outgoing;
       }
-    } catch (e) {
-      type = CallType.outgoing;
-    }
 
-    return CallLogModel(
-      id: map['id'] ?? '',
-      callerId: map['callerId'] ?? '',
-      callerName: map['callerName'] ?? '',
-      receiverId: map['receiverId'] ?? '',
-      receiverName: map['receiverName'] ?? '',
-      callTypeEnum: type,
-      timestamp:
-          DateTime.parse(map['timestamp'] ?? DateTime.now().toIso8601String()),
-      duration: map['duration'] ?? 0,
-      recordingUrl: map['recordingUrl'],
-      transcript: map['transcript'],
-    );
+      DateTime timestamp;
+      try {
+        timestamp = DateTime.parse(
+            map['timestamp'] ?? DateTime.now().toIso8601String());
+      } catch (e) {
+        print('⚠️ Invalid timestamp, using current time');
+        timestamp = DateTime.now();
+      }
+
+      int duration;
+      try {
+        duration = (map['duration'] ?? 0) is int
+            ? map['duration']
+            : int.tryParse(map['duration'].toString()) ?? 0;
+        if (duration < 0) duration = 0;
+      } catch (e) {
+        print('⚠️ Invalid duration, defaulting to 0');
+        duration = 0;
+      }
+
+      return CallLogModel(
+        id: map['id']?.toString() ?? '',
+        callerId: map['callerId']?.toString() ?? '',
+        callerName: map['callerName']?.toString() ?? 'Unknown',
+        receiverId: map['receiverId']?.toString() ?? '',
+        receiverName: map['receiverName']?.toString() ?? 'Unknown',
+        callTypeEnum: type,
+        timestamp: timestamp,
+        duration: duration,
+        recordingUrl: map['recordingUrl']?.toString(),
+        transcript: map['transcript']?.toString(),
+        hasTranscript: map['hasTranscript'] ?? false, // new field
+      );
+    } catch (e) {
+      print('❌ Critical error creating CallLogModel: $e');
+      return CallLogModel(
+        id: 'error_${DateTime.now().millisecondsSinceEpoch}',
+        callerId: 'unknown',
+        callerName: 'Unknown',
+        receiverId: 'unknown',
+        receiverName: 'Unknown',
+        callTypeEnum: CallType.outgoing,
+        timestamp: DateTime.now(),
+        duration: 0,
+        hasTranscript: false, // new field
+      );
+    }
   }
 
   String get formattedDuration {
@@ -145,6 +179,7 @@ class CallLogModel extends HiveObject {
       duration: duration ?? this.duration,
       recordingUrl: recordingUrl ?? this.recordingUrl,
       transcript: transcript ?? this.transcript,
+      hasTranscript: hasTranscript ?? this.hasTranscript, // new field
     );
   }
 }

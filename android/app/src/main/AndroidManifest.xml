@@ -11,6 +11,8 @@
     <uses-permission android:name="android.permission.BLUETOOTH" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- ✅ Android 13+ storage access -->
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
@@ -25,12 +27,17 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
+    <!-- ✅ Speech recognition permissions -->
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    
     <application
         android:name="${applicationName}"
         android:label="flutter_voicecall_app"
         android:icon="@mipmap/ic_launcher"
         android:requestLegacyExternalStorage="true">
-
+        <service 
+            android:name="android.speech.SpeechRecognizer"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -56,6 +63,12 @@
     </application>
 
     <queries>
+        <!-- Speech recognition query -->
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        
+        <!-- Text processing query -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />

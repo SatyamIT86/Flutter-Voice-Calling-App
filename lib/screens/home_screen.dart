@@ -3,7 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_voicecall_app/models/call_log_model.dart';
 import 'package:flutter_voicecall_app/models/contact_model.dart';
-import 'package:flutter_voicecall_app/models/recording_model.dart';
+import 'package:flutter_voicecall_app/models/transcript_model.dart';
 import 'package:hive/hive.dart';
 import 'dart:async';
 import '../services/auth_service.dart';
@@ -11,7 +11,7 @@ import '../services/call_service.dart';
 import '../models/call_state_model.dart';
 import '../utils/constants.dart';
 import 'contacts/contact_screen.dart';
-import 'recordings/recordings_screen.dart';
+import 'recordings/Transcript_screen.dart';
 import 'call_logs/call_logs_screen.dart';
 import 'call/incoming_call_screen.dart';
 import 'auth/login_screen.dart';
@@ -32,7 +32,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final List<Widget> _screens = [
     const ContactsScreen(),
     const CallLogsScreen(),
-    const RecordingsScreen(),
+    const TranscriptsScreen(),
   ];
 
   @override
@@ -91,7 +91,7 @@ class _HomeScreenState extends State<HomeScreen> {
               await Hive.box<ContactModel>(AppConstants.contactsBox).clear();
               await Hive.box<CallLogModel>(AppConstants.callLogsBox)
                   .clear(); // ADD THIS
-              await Hive.box<RecordingModel>(AppConstants.recordingsBox)
+              await Hive.box<TranscriptModel>(AppConstants.transcriptsBox)
                   .clear(); // ADD THIS
               await Hive.box(AppConstants.settingsBox).clear();
 
@@ -127,7 +127,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ? 'Contacts'
               : _currentIndex == 1
                   ? 'Call Logs'
-                  : 'Recordings',
+                  : 'Transcripts',
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         backgroundColor: Colors.white,
@@ -163,9 +163,9 @@ class _HomeScreenState extends State<HomeScreen> {
             label: 'Call Logs',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.mic_outlined),
-            activeIcon: Icon(Icons.mic),
-            label: 'Recordings',
+            icon: Icon(Icons.transcribe_outlined),
+            activeIcon: Icon(Icons.transcribe),
+            label: 'Transcripts',
           ),
         ],
       ),

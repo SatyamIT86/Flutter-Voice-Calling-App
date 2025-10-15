@@ -16,22 +16,18 @@ class CallLogModelAdapter extends TypeAdapter<CallLogModel> {
     final fields = <int, dynamic>{
       for (int i = 0; i < numOfFields; i++) reader.readByte(): reader.read(),
     };
-
-    // Convert stored string to enum safely
-    CallType callTypeEnum;
-    final storedCallType = (fields[5] as String?)?.toLowerCase() ?? 'outgoing';
-    switch (storedCallType) {
-      case 'incoming':
-        callTypeEnum = CallType.incoming;
-        break;
-      case 'outgoing':
-        callTypeEnum = CallType.outgoing;
-        break;
-      case 'missed':
-        callTypeEnum = CallType.missed;
-        break;
-      default:
-        callTypeEnum = CallType.outgoing;
+    // Parse callType safely inline
+    CallType parseCallType(String type) {
+      switch (type.toLowerCase()) {
+        case 'incoming':
+          return CallType.incoming;
+        case 'outgoing':
+          return CallType.outgoing;
+        case 'missed':
+          return CallType.missed;
+        default:
+          return CallType.outgoing;
+      }
     }
 
     return CallLogModel(
@@ -40,11 +36,12 @@ class CallLogModelAdapter extends TypeAdapter<CallLogModel> {
       callerName: fields[2] as String,
       receiverId: fields[3] as String,
       receiverName: fields[4] as String,
-      callTypeEnum: callTypeEnum,
       timestamp: fields[6] as DateTime,
       duration: fields[7] as int,
       recordingUrl: fields[8] as String?,
       transcript: fields[9] as String?,
+      callTypeEnum: parseCallType(fields[5] as String? ?? 'outgoing'),
+      hasTranscript: fields[10] as bool? ?? false,
     );
   }
 
@@ -63,7 +60,7 @@ class CallLogModelAdapter extends TypeAdapter<CallLogModel> {
       ..writeByte(4)
       ..write(obj.receiverName)
       ..writeByte(5)
-      ..write(obj.callType) // store as string
+      ..write(obj.callType)
       ..writeByte(6)
       ..write(obj.timestamp)
       ..writeByte(7)

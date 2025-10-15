@@ -33,13 +33,21 @@ class _CallLogsScreenState extends State<CallLogsScreen> {
     try {
       final userId = _authService.currentUser?.uid;
       if (userId != null) {
-        final logs = await _callLogService.getCallLogs(userId);
+        // The key fix: assign the result to _callLogs
+        final List<CallLogModel> fetchedLogs =
+            await _callLogService.getCallLogs(userId);
         setState(() {
-          _callLogs = logs;
+          _callLogs = fetchedLogs; // This line was missing
         });
+        print('📞 Loaded ${_callLogs.length} call logs');
       }
     } catch (e) {
       print('Error loading call logs: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading call logs: $e')),
+        );
+      }
     } finally {
       setState(() => _isLoading = false);
     }

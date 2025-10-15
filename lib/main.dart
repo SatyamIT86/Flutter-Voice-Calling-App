@@ -6,28 +6,30 @@ import 'package:flutter_voicecall_app/utils/migrate_data.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'models/contact_model.dart';
 import 'models/call_log_model.dart'; // ADD THIS
-import 'models/recording_model.dart';
+import 'models/transcript_model.dart';
 import 'screens/splash_screen.dart';
 import 'utils/constants.dart';
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase
-  await Firebase.initializeApp();
-
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   // Initialize Hive
   await Hive.initFlutter();
 
   Hive.registerAdapter(ContactModelAdapter());
   Hive.registerAdapter(CallLogModelAdapter());
-  Hive.registerAdapter(RecordingModelAdapter());
+  Hive.registerAdapter(TranscriptModelAdapter());
 
   await clearAllHiveData();
 
   await Hive.openBox<ContactModel>(AppConstants.contactsBox);
   await Hive.openBox<CallLogModel>(AppConstants.callLogsBox);
-  await Hive.openBox<RecordingModel>(AppConstants.recordingsBox);
+  await Hive.openBox<TranscriptModel>(AppConstants.transcriptsBox);
   await Hive.openBox(AppConstants.settingsBox);
 
   runApp(const MyApp());
